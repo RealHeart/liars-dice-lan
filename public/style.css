@@ -394,6 +394,54 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     box-shadow: 0 0 15px rgba(241, 196, 15, 0.6);
 }
 
+/* 扣动扳机按钮容器 */
+#trigger-container {
+    position: relative;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+/* SVG进度圆环 */
+.trigger-progress {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    pointer-events: none;
+}
+
+.progress-bg {
+    fill: none;
+    stroke: rgba(231, 76, 60, 0.2);
+    stroke-width: 3;
+}
+
+.progress-bar {
+    fill: none;
+    stroke: #f1c40f;
+    stroke-width: 4;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    stroke-dasharray: 201; /* 2 * PI * 32 ≈ 201 */
+    stroke-dashoffset: 0;
+    filter: drop-shadow(0 0 5px rgba(241, 196, 15, 0.8));
+}
+
+.progress-bar.countdown {
+    animation: countdown 10s linear forwards;
+}
+
+@keyframes countdown {
+    from {
+        stroke-dashoffset: 0;
+    }
+    to {
+        stroke-dashoffset: 201;
+    }
+}
+
 /* 扣动扳机按钮 */
 .btn-trigger {
     background: #e74c3c;
@@ -403,9 +451,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     border-radius: 50%;
     font-size: 2rem;
     padding: 0;
-    margin-left: 10px;
     box-shadow: 0 0 20px rgba(231, 76, 60, 0.5);
     animation: pulse 1.5s ease-in-out infinite;
+    position: relative;
+    z-index: 2;
 }
 
 @keyframes pulse {

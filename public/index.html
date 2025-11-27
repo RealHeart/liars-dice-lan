@@ -45,7 +45,13 @@
         <div class="actions">
             <button id="btn-play" onclick="submitPlay()" disabled>出牌</button>
             <button id="btn-challenge" onclick="submitChallenge()" class="btn-danger" style="display:none;">质疑 (Liar!)</button>
-            <button id="trigger-btn" onclick="pullTrigger()" class="btn-trigger" style="display:none;">🔫</button>
+            <div id="trigger-container" style="display:none;">
+                <svg class="trigger-progress" width="70" height="70">
+                    <circle class="progress-bg" cx="35" cy="35" r="32"></circle>
+                    <circle id="progress-circle" class="progress-bar" cx="35" cy="35" r="32"></circle>
+                </svg>
+                <button id="trigger-btn" onclick="pullTrigger()" class="btn-trigger">🔫</button>
+            </div>
             <div id="bullet-display" style="display:none;"></div>
         </div>
         <div id="my-hand" class="hand-container"></div>

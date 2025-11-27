@@ -6,6 +6,7 @@ let isGameStarted = false;
 let currentTableCards = []; // 当前桌面上的牌（用于跟踪）
 let lastPlayId = null; // 跟踪上一次出牌，避免重复动画
 let previousDeadPlayer = null; // 跟踪上次死亡的玩家
+let triggerCountdown = null; // 开枪倒计时定时器
 
 // 卡片类型到图片路径的映射
 const CARD_IMAGES = {
@@ -314,7 +315,7 @@ socket.on('stateUpdate', (state) => {
     }
 
     // 处理轮盘赌
-    const triggerBtn = document.getElementById('trigger-btn');
+    const triggerContainer = document.getElementById('trigger-container');
     const bulletDisplay = document.getElementById('bullet-display');
 
     if (state.gameState === 'roulette') {
@@ -323,7 +324,10 @@ socket.on('stateUpdate', (state) => {
 
         // 如果是我，显示扣动扳机按钮和子弹指示
         if (isVictim) {
-            triggerBtn.style.display = 'inline-block';
+            triggerContainer.style.display = 'inline-block';
+
+            // 启动10秒倒计时
+            startTriggerCountdown();
 
             // 显示子弹指示器
             if (bulletDisplay && victimPlayer) {
@@ -343,12 +347,14 @@ socket.on('stateUpdate', (state) => {
                 bulletDisplay.style.display = 'block';
             }
         } else {
-            triggerBtn.style.display = 'none';
+            triggerContainer.style.display = 'none';
             if (bulletDisplay) bulletDisplay.style.display = 'none';
+            clearTriggerCountdown(); // 清除倒计时
         }
     } else {
-        triggerBtn.style.display = 'none';
+        triggerContainer.style.display = 'none';
         if (bulletDisplay) bulletDisplay.style.display = 'none';
+        clearTriggerCountdown(); // 清除倒计时
     }
 });
 
@@ -417,7 +423,41 @@ function submitChallenge() {
 }
 
 function pullTrigger() {
+    // 清除倒计时
+    clearTriggerCountdown();
     socket.emit('pullTrigger');
+}
+
+// 清除开枪倒计时
+function clearTriggerCountdown() {
+    if (triggerCountdown) {
+        clearTimeout(triggerCountdown);
+        triggerCountdown = null;
+    }
+
+    // 移除进度条动画
+    const progressCircle = document.getElementById('progress-circle');
+    if (progressCircle) {
+        progressCircle.classList.remove('countdown');
+        // 强制重置动画
+        void progressCircle.offsetWidth;
+    }
+}
+
+// 启动开枪倒计时
+function startTriggerCountdown() {
+    clearTriggerCountdown();
+
+    const progressCircle = document.getElementById('progress-circle');
+    if (progressCircle) {
+        // 重新添加动画类
+        progressCircle.classList.add('countdown');
+    }
+
+    // 10秒后自动开枪
+    triggerCountdown = setTimeout(() => {
+        pullTrigger();
+    }, 10000);
 }
 
 // 触发广告
