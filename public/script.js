@@ -11,10 +11,10 @@ let previousJudgment = null; // 跟踪上次审判（格式：judgerId_accusedId
 
 // 卡片类型到图片路径的映射
 const CARD_IMAGES = {
-    '🌟': 'assets/手牌星星2k.bmp',
-    '🌙': 'assets/手牌月亮2k.bmp',
-    '☀️': 'assets/手牌太阳2k.bmp',
-    '🤡': 'assets/手牌万能2k.bmp'
+    '🌟': 'assets/card-star-2k.webp',
+    '🌙': 'assets/card-moon-2k.webp',
+    '☀️': 'assets/card-sun-2k.webp',
+    '🤡': 'assets/card-joker-2k.webp'
 };
 
 // 根据卡片类型获取图片路径
@@ -278,7 +278,7 @@ socket.on('stateUpdate', (state) => {
 
         // 如果这个玩家是轮盘赌受害者，显示枪图标
         const gunIcon = (state.gameState === 'roulette' && state.rouletteVictim === p.id)
-            ? '<span class="gun-icon"><img src="assets/gun-pistol-revolver-.svg" alt="枪"></span>'
+            ? '<span class="gun-icon"><img src="assets/revolver.svg" alt="枪"></span>'
             : '';
 
         // 表情图标（左上角）
@@ -287,18 +287,18 @@ socket.on('stateUpdate', (state) => {
         // 优先级：刚死亡 > 质疑者 > 被质疑者
         if (state.lastDeadPlayer === p.id) {
             // 刚死亡的玩家显示爆炸
-            emotionIcon = '<span class="emotion-icon explode"><img src="assets/爆炸.svg" alt="爆炸"></span>';
+            emotionIcon = '<span class="emotion-icon explode"><img src="assets/explosion.svg" alt="爆炸"></span>';
         } else if (state.challengerId === p.id) {
             // 质疑者显示愤怒
-            emotionIcon = '<span class="emotion-icon angry"><img src="assets/愤怒.svg" alt="愤怒"></span>';
+            emotionIcon = '<span class="emotion-icon angry"><img src="assets/angry.svg" alt="愤怒"></span>';
         } else if (state.lastPlay && state.lastPlay.revealed && state.rouletteVictim === p.id) {
             // 被质疑者显示质疑表情（在轮盘赌阶段且牌已翻开）
-            emotionIcon = '<span class="emotion-icon questioned"><img src="assets/质疑.svg" alt="质疑"></span>';
+            emotionIcon = '<span class="emotion-icon questioned"><img src="assets/challenge.svg" alt="质疑"></span>';
         }
 
         // 如果玩家已死亡（但不是刚死亡），显示幽灵图标
         const ghostIcon = (!p.isAlive && state.lastDeadPlayer !== p.id)
-            ? '<span class="ghost-icon"><img src="assets/幽灵.svg" alt="幽灵"></span>'
+            ? '<span class="ghost-icon"><img src="assets/ghost.svg" alt="幽灵"></span>'
             : '';
 
         // 如果这个玩家是轮盘赌受害者，显示子弹指示
