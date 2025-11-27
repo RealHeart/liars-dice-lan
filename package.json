@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Liar's Bar LAN Game",
   "main": "server.js",
+  "packageManager": "pnpm@10.23.0",
   "scripts": {
     "start": "node server.js"
   },
