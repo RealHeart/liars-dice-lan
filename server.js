@@ -24,6 +24,8 @@ let gameState = 'lobby'; // 'lobby', 'playing', 'roulette', 'gameover'
 let rouletteVictim = null; // 当前正在玩轮盘的人
 let challengerId = null; // 质疑者ID
 let lastDeadPlayer = null; // 最近死亡的玩家ID
+let requiredShots = 1; // 需要扣动扳机的次数（王的审判时为2）
+let currentShot = 0; // 当前已经扣动的次数
 
 // --- 辅助函数 ---
 function createDeck() {
@@ -59,6 +61,8 @@ function resetGame() {
     rouletteVictim = null;
     challengerId = null;
     lastDeadPlayer = null;
+    requiredShots = 1;
+    currentShot = 0;
 
     // 只有在有玩家的情况下才通知
     if (players.length > 0) {
@@ -88,6 +92,8 @@ function startRound(resetTable = true) {
     lastPlay = null;
     challengerId = null; // 清除质疑者
     lastDeadPlayer = null; // 清除死亡标记
+    requiredShots = 1;
+    currentShot = 0;
     deck = createDeck();
 
     // 发牌 (每人5张)
@@ -136,6 +142,8 @@ function updateGame(logMsg = "") {
         rouletteVictim,
         challengerId,
         lastDeadPlayer,
+        requiredShots,
+        currentShot,
         players: players.map(p => ({
             id: p.id,
             name: p.name,
@@ -283,6 +291,65 @@ io.on('connection', (socket) => {
         }, 1000);
     });
 
+    socket.on('kingJudgment', () => {
+        if (gameState !== 'playing' || !lastPlay) return;
+
+        // 王的审判：任何人都可以发起（不限于轮到自己）
+        const judge = players.find(p => p.id === socket.id);
+        const accused = players.find(p => p.id === lastPlay.playerId);
+        if (!judge || !accused) return;
+        if (!judge.isAlive) return; // 死了的人不能发起审判
+
+        // 验证谎言
+        let isLie = false;
+        lastPlay.actualCards.forEach(card => {
+            // 如果牌不是要求的类型，并且也不是小丑，那就是撒谎
+            if (card !== tableReq && card !== JOKER) {
+                isLie = true;
+            }
+        });
+
+        // 标记牌已被翻开
+        lastPlay.revealed = true;
+
+        // 设置质疑者（发起审判的人）
+        challengerId = judge.id;
+
+        let msg = '';
+        let victim;
+        if (isLie) {
+            msg = `⚔️ 审判成功！${accused.name} 撒谎了！(真实牌: ${lastPlay.actualCards.join(' ')}) 需扣动2次扳机！`;
+            rouletteVictim = accused.id;
+            victim = accused;
+        } else {
+            msg = `⚔️ 审判失败！${accused.name} 没撒谎！(真实牌: ${lastPlay.actualCards.join(' ')}) ${judge.name} 需扣动2次扳机！`;
+            rouletteVictim = judge.id; // 审判失败，自己扣动2次扳机
+            victim = judge;
+        }
+
+        // 如果受害者之前已经开完6枪，重新装填左轮
+        if (victim.shotsFired >= 6) {
+            victim.bulletPosition = Math.floor(Math.random() * 6) + 1;
+            victim.shotsFired = 0;
+        }
+
+        // 设置需要扣动2次扳机
+        requiredShots = 2;
+        currentShot = 0;
+
+        gameState = 'roulette';
+        sendGameLog(`👑 ${judge.name} 发起了王的审判，审判 ${accused.name}！`, 'challenge');
+        sendGameLog(msg, 'challenge');
+
+        // 先发送一次更新显示翻牌动画
+        updateGame('王的审判中...');
+
+        // 1秒后再显示结果
+        setTimeout(() => {
+            updateGame(msg);
+        }, 1000);
+    });
+
     socket.on('pullTrigger', () => {
         if (gameState !== 'roulette') return;
         if (socket.id !== rouletteVictim) return;
@@ -291,9 +358,10 @@ io.on('connection', (socket) => {
 
         // 开枪次数+1
         victim.shotsFired++;
+        currentShot++; // 增加当前已扣动次数
         const shotsRemaining = 7 - victim.shotsFired; // 剩余子弹数（包括当前这枪）
 
-        sendGameLog(`${victim.name} 扣动了扳机... (剩余${shotsRemaining}发)`, 'roulette');
+        sendGameLog(`${victim.name} 扣动了扳机... (第${currentShot}/${requiredShots}次，剩余${shotsRemaining}发)`, 'roulette');
 
         io.emit('sound', 'spin'); // 播放音效指令
 
@@ -320,14 +388,23 @@ io.on('connection', (socket) => {
                 }, 3000);
             } else {
                 io.emit('sound', 'click');
-                const msg = `😅 咔哒... 空枪！${victim.name} 活下来了！(已开${victim.shotsFired}枪，剩余${6 - victim.shotsFired}发)`;
-                sendGameLog(msg, 'roulette');
-                updateGame(msg);
-                // 活下来，游戏继续，重置牌局
-                setTimeout(() => {
-                    challengerId = null; // 清除质疑者标记
-                    startRound(true);
-                }, 2000);
+
+                // 检查是否还需要继续扣动扳机
+                if (currentShot < requiredShots) {
+                    const msg = `😅 咔哒... 空枪！${victim.name} 还需要再扣动 ${requiredShots - currentShot} 次扳机！`;
+                    sendGameLog(msg, 'roulette');
+                    updateGame(msg);
+                    // 继续轮盘赌，不重置牌局
+                } else {
+                    const msg = `😅 咔哒... 空枪！${victim.name} 活下来了！(已开${victim.shotsFired}枪，剩余${6 - victim.shotsFired}发)`;
+                    sendGameLog(msg, 'roulette');
+                    updateGame(msg);
+                    // 活下来，游戏继续，重置牌局
+                    setTimeout(() => {
+                        challengerId = null; // 清除质疑者标记
+                        startRound(true);
+                    }, 2000);
+                }
             }
         }, 1000);
     });

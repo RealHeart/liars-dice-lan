@@ -39,12 +39,20 @@
             <img src="assets/血.svg" alt="血" class="blood-icon">
             死了
         </div>
+        <div id="judgment-message" style="display:none;">
+            <span id="judge-name"></span>
+            审判
+            <img src="assets/审判.svg" alt="审判" class="judgment-icon">
+            了
+            <span id="accused-name"></span>
+        </div>
     </div>
 
         <div class="bottom-controls">
         <div class="actions">
             <button id="btn-play" onclick="submitPlay()" disabled>出牌</button>
             <button id="btn-challenge" onclick="submitChallenge()" class="btn-danger" style="display:none;">质疑 (Liar!)</button>
+            <button id="btn-king-judgment" onclick="submitKingJudgment()" class="btn-king-judgment" style="display:none;">👑 王的审判</button>
             <div id="trigger-container" style="display:none;">
                 <svg class="trigger-progress" width="70" height="70">
                     <circle class="progress-bg" cx="35" cy="35" r="32"></circle>

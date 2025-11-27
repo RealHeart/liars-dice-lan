@@ -7,6 +7,7 @@ let currentTableCards = []; // 当前桌面上的牌（用于跟踪）
 let lastPlayId = null; // 跟踪上一次出牌，避免重复动画
 let previousDeadPlayer = null; // 跟踪上次死亡的玩家
 let triggerCountdown = null; // 开枪倒计时定时器
+let previousJudgment = null; // 跟踪上次审判（格式：judgerId_accusedId）
 
 // 卡片类型到图片路径的映射
 const CARD_IMAGES = {
@@ -94,6 +95,22 @@ function showDeathMessage(playerName) {
     }, 2500);
 }
 
+// 显示审判消息
+function showJudgmentMessage(judgeName, accusedName) {
+    const judgmentMsg = document.getElementById('judgment-message');
+    const judgeNameEl = document.getElementById('judge-name');
+    const accusedNameEl = document.getElementById('accused-name');
+
+    judgeNameEl.innerText = judgeName;
+    accusedNameEl.innerText = accusedName;
+    judgmentMsg.style.display = 'flex';
+
+    // 2秒后隐藏
+    setTimeout(() => {
+        judgmentMsg.style.display = 'none';
+    }, 2000);
+}
+
 // 日志功能
 function toggleGameLog() {
     const panel = document.getElementById('game-log-panel');
@@ -179,6 +196,20 @@ socket.on('stateUpdate', (state) => {
         previousDeadPlayer = state.lastDeadPlayer;
     } else if (!state.lastDeadPlayer) {
         previousDeadPlayer = null;
+    }
+
+    // 检测王的审判（requiredShots为2时表示是王的审判）
+    if (state.gameState === 'roulette' && state.challengerId && state.lastPlay && state.lastPlay.revealed && state.requiredShots === 2) {
+        const judgePlayer = state.players.find(p => p.id === state.challengerId);
+        const accusedPlayer = state.players.find(p => p.id === state.lastPlay.playerId);
+
+        const judgmentId = `${state.challengerId}_${state.lastPlay.playerId}`;
+        if (judgePlayer && accusedPlayer && judgmentId !== previousJudgment) {
+            showJudgmentMessage(judgePlayer.name, accusedPlayer.name);
+            previousJudgment = judgmentId;
+        }
+    } else if (state.gameState !== 'roulette' || state.requiredShots !== 2) {
+        previousJudgment = null;
     }
 
     // 切换界面
@@ -314,6 +345,15 @@ socket.on('stateUpdate', (state) => {
         challBtn.style.display = 'none';
     }
 
+    // 王的审判按钮：任何活着的玩家都可以对当前出牌人发起审判（除了自己）
+    const kingJudgmentBtn = document.getElementById('btn-king-judgment');
+    const myPlayer = state.players.find(p => p.id === socket.id);
+    if (state.gameState === 'playing' && state.lastPlay && myPlayer && myPlayer.isAlive && state.lastPlay.playerId !== socket.id) {
+        kingJudgmentBtn.style.display = 'inline-block';
+    } else {
+        kingJudgmentBtn.style.display = 'none';
+    }
+
     // 处理轮盘赌
     const triggerContainer = document.getElementById('trigger-container');
     const bulletDisplay = document.getElementById('bullet-display');
@@ -333,6 +373,8 @@ socket.on('stateUpdate', (state) => {
             if (bulletDisplay && victimPlayer) {
                 const shotsFired = victimPlayer.shotsFired || 0;
                 const remaining = 6 - shotsFired;
+                const requiredShots = state.requiredShots || 1;
+                const currentShot = state.currentShot || 0;
 
                 // 创建子弹视觉指示：已发射的用💀，剩余的用🔘
                 let bullets = '';
@@ -343,7 +385,13 @@ socket.on('stateUpdate', (state) => {
                     bullets += '🔘';
                 }
 
-                bulletDisplay.innerHTML = `<div class="bullet-indicator">${bullets} (剩余${remaining}发)</div>`;
+                // 如果需要扣动多次，显示进度
+                let shotsInfo = `(剩余${remaining}发)`;
+                if (requiredShots > 1) {
+                    shotsInfo = `需扣动${requiredShots}次 (${currentShot}/${requiredShots}) | 剩余${remaining}发`;
+                }
+
+                bulletDisplay.innerHTML = `<div class="bullet-indicator">${bullets} ${shotsInfo}</div>`;
                 bulletDisplay.style.display = 'block';
             }
         } else {
@@ -419,6 +467,12 @@ function submitPlay() {
 function submitChallenge() {
     if(confirm("确定要质疑他撒谎吗？如果他说的是真话，你就要对自己开枪！")) {
         socket.emit('challenge');
+    }
+}
+
+function submitKingJudgment() {
+    if(confirm("👑 确定要发起王的审判吗？\n\n审判成功：对方扣动2次扳机\n审判失败：你自己扣动2次扳机")) {
+        socket.emit('kingJudgment');
     }
 }
 
