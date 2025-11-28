@@ -152,9 +152,19 @@ function startGame() {
     socket.emit('startGame');
 }
 
+function addAI() {
+    const difficulty = document.getElementById('ai-difficulty').value;
+    socket.emit('addAI', difficulty);
+}
+
+function removeAI() {
+    socket.emit('removeAI');
+}
+
 socket.on('youAreHost', () => {
     amIHost = true;
     document.getElementById('start-btn').style.display = 'block';
+    document.getElementById('ai-controls').style.display = 'block';
     // 如果游戏已经开始，显示广告按钮
     if (isGameStarted) {
         document.getElementById('ad-btn').style.display = 'block';
@@ -163,7 +173,12 @@ socket.on('youAreHost', () => {
 
 socket.on('lobbyUpdate', (players) => {
     const list = document.getElementById('player-list');
-    list.innerHTML = players.map(p => `<li>${p.name} ${p.isHost ? '(房主)' : ''}</li>`).join('');
+    list.innerHTML = players.map(p => {
+        let badge = '';
+        if (p.isHost) badge = ' 👑房主';
+        if (p.isAI) badge += ' 🤖AI';
+        return `<li>${p.name}${badge}</li>`;
+    }).join('');
 });
 
 socket.on('gameLog', (data) => {

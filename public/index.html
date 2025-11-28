@@ -16,6 +16,16 @@
     <div id="waiting-area" style="display:none;">
         <h3>在大厅等待中...</h3>
         <ul id="player-list"></ul>
+        <div id="ai-controls" style="display:none; margin: 15px 0;">
+            <label for="ai-difficulty">AI 难度：</label>
+            <select id="ai-difficulty">
+                <option value="easy">简单</option>
+                <option value="medium" selected>中等</option>
+                <option value="hard">困难</option>
+            </select>
+            <button onclick="addAI()" class="host-btn">添加 AI 玩家</button>
+            <button onclick="removeAI()" class="host-btn">移除 AI 玩家</button>
+        </div>
         <button id="start-btn" onclick="startGame()" style="display:none;" class="host-btn">我是房主，开始游戏</button>
     </div>
 </div>

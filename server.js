@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const { internalIpV4 } = require('internal-ip');
+const AIPlayer = require('./ai-player');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +17,7 @@ const JOKER = '🤡'; // 小丑 (万能牌，视为真话)
 const BULLET_COUNT = 6; // 弹巢容量
 
 // --- 全局状态 ---
-let players = []; // { id, name, hand: [], isAlive: true, isHost: boolean, bulletPosition: 1-6, shotsFired: 0 }
+let players = []; // { id, name, hand: [], isAlive: true, isHost: boolean, bulletPosition: 1-6, shotsFired: 0, isAI: false, ai: AIPlayer|null }
 let deck = [];
 let turnIndex = 0;
 let tableReq = ''; // 当前桌面要求的牌 (例如 '🌙')
@@ -184,6 +185,220 @@ function updateGame(logMsg = "") {
     if (logMsg) {
         sendGameLog(logMsg, 'info');
     }
+
+    // 触发 AI 自动操作
+    triggerAIAction();
+}
+
+// --- AI 自动操作 ---
+function triggerAIAction() {
+    if (gameState === 'playing') {
+        // 检查当前回合是否是 AI 玩家
+        const currentPlayer = players[turnIndex];
+        if (currentPlayer && currentPlayer.isAI && currentPlayer.isAlive) {
+            // AI 玩家出牌
+            setTimeout(() => {
+                executeAIPlayCards(currentPlayer);
+            }, currentPlayer.ai.getActionDelay());
+        }
+    } else if (gameState === 'roulette') {
+        // 检查是否是 AI 需要扣扳机
+        const victim = players.find(p => p.id === rouletteVictim);
+        if (victim && victim.isAI && victim.isAlive) {
+            setTimeout(() => {
+                executeAIPullTrigger(victim);
+            }, victim.ai.getActionDelay());
+        }
+    }
+}
+
+function executeAIPlayCards(aiPlayer) {
+    if (gameState !== 'playing' || !players[turnIndex] || players[turnIndex].id !== aiPlayer.id) {
+        return; // 状态已改变，取消操作
+    }
+
+    // 先检查是否要质疑上一手牌
+    if (lastPlay && lastPlay.playerId !== aiPlayer.id) {
+        // 决定是否质疑
+        const shouldChallenge = aiPlayer.ai.shouldChallenge(lastPlay, aiPlayer.hand, tableReq);
+        const shouldJudgment = aiPlayer.ai.shouldKingJudgment(lastPlay, aiPlayer.hand, tableReq);
+
+        if (shouldJudgment) {
+            // 发起王的审判
+            executeAIKingJudgment(aiPlayer);
+            return;
+        } else if (shouldChallenge) {
+            // 普通质疑
+            executeAIChallenge(aiPlayer);
+            return;
+        }
+    }
+
+    // 决定出哪些牌
+    const indices = aiPlayer.ai.decideCardsToPlay(aiPlayer.hand, tableReq);
+
+    if (!indices || indices.length === 0) return;
+
+    // 获取实际牌面
+    let playedCards = [];
+    indices.sort((a, b) => b - a);
+
+    indices.forEach(idx => {
+        if (aiPlayer.hand[idx]) {
+            playedCards.push(aiPlayer.hand[idx]);
+            aiPlayer.hand.splice(idx, 1);
+        }
+    });
+
+    lastPlay = {
+        playerId: aiPlayer.id,
+        count: playedCards.length,
+        actualCards: playedCards
+    };
+
+    turnIndex = getNextAlivePlayer(turnIndex);
+    const msg = `${aiPlayer.name} 打出了 ${playedCards.length} 张牌`;
+    sendGameLog(msg, 'play');
+    updateGame(msg);
+}
+
+function executeAIChallenge(aiPlayer) {
+    if (gameState !== 'playing' || !lastPlay) return;
+
+    const liar = players.find(p => p.id === lastPlay.playerId);
+    if (!liar) return;
+
+    // 验证谎言
+    let isLie = false;
+    lastPlay.actualCards.forEach(card => {
+        if (card !== tableReq && card !== JOKER) {
+            isLie = true;
+        }
+    });
+
+    lastPlay.revealed = true;
+    challengerId = aiPlayer.id;
+
+    let msg = '';
+    let victim;
+    if (isLie) {
+        msg = `😮 抓到了！${liar.name} 撒谎了！(真实牌: ${lastPlay.actualCards.join(' ')})`;
+        rouletteVictim = liar.id;
+        victim = liar;
+    } else {
+        msg = `😓 冤枉！${liar.name} 没撒谎！(真实牌: ${lastPlay.actualCards.join(' ')})`;
+        rouletteVictim = aiPlayer.id;
+        victim = aiPlayer;
+    }
+
+    if (victim.shotsFired >= 6) {
+        victim.bulletPosition = Math.floor(Math.random() * 6) + 1;
+        victim.shotsFired = 0;
+    }
+
+    gameState = 'roulette';
+    sendGameLog(`${aiPlayer.name} 质疑了 ${liar.name}`, 'challenge');
+    sendGameLog(msg, 'challenge');
+
+    updateGame('质疑中...');
+    setTimeout(() => {
+        updateGame(msg);
+    }, 1000);
+}
+
+function executeAIKingJudgment(aiPlayer) {
+    if (gameState !== 'playing' || !lastPlay) return;
+
+    const accused = players.find(p => p.id === lastPlay.playerId);
+    if (!accused) return;
+
+    // 验证谎言
+    let isLie = false;
+    lastPlay.actualCards.forEach(card => {
+        if (card !== tableReq && card !== JOKER) {
+            isLie = true;
+        }
+    });
+
+    lastPlay.revealed = true;
+    challengerId = aiPlayer.id;
+
+    let msg = '';
+    let victim;
+    if (isLie) {
+        msg = `⚔️ 审判成功！${accused.name} 撒谎了！(真实牌: ${lastPlay.actualCards.join(' ')}) 需扣动2次扳机！`;
+        rouletteVictim = accused.id;
+        victim = accused;
+    } else {
+        msg = `⚔️ 审判失败！${accused.name} 没撒谎！(真实牌: ${lastPlay.actualCards.join(' ')}) ${aiPlayer.name} 需扣动2次扳机！`;
+        rouletteVictim = aiPlayer.id;
+        victim = aiPlayer;
+    }
+
+    if (victim.shotsFired >= 6) {
+        victim.bulletPosition = Math.floor(Math.random() * 6) + 1;
+        victim.shotsFired = 0;
+    }
+
+    requiredShots = 2;
+    currentShot = 0;
+
+    gameState = 'roulette';
+    sendGameLog(`👑 ${aiPlayer.name} 发起了王的审判，审判 ${accused.name}！`, 'challenge');
+    sendGameLog(msg, 'challenge');
+
+    updateGame('王的审判中...');
+    setTimeout(() => {
+        updateGame(msg);
+    }, 1000);
+}
+
+function executeAIPullTrigger(aiPlayer) {
+    if (gameState !== 'roulette' || aiPlayer.id !== rouletteVictim) return;
+
+    aiPlayer.shotsFired++;
+    currentShot++;
+    const shotsRemaining = 7 - aiPlayer.shotsFired;
+
+    sendGameLog(`${aiPlayer.name} 扣动了扳机... (第${currentShot}/${requiredShots}次，剩余${shotsRemaining}发)`, 'roulette');
+    io.emit('sound', 'spin');
+
+    setTimeout(() => {
+        const dead = aiPlayer.shotsFired === aiPlayer.bulletPosition;
+
+        if (dead) {
+            aiPlayer.isAlive = false;
+            lastDeadPlayer = aiPlayer.id;
+            io.emit('sound', 'bang');
+            const msg = `💥 砰！${aiPlayer.name} 倒下了... (第${aiPlayer.shotsFired}枪命中！)`;
+            sendGameLog(msg, 'roulette');
+            updateGame(msg);
+
+            aiPlayer.bulletPosition = Math.floor(Math.random() * 6) + 1;
+            aiPlayer.shotsFired = 0;
+
+            setTimeout(() => {
+                lastDeadPlayer = null;
+                startRound(true);
+            }, 3000);
+        } else {
+            io.emit('sound', 'click');
+
+            if (currentShot < requiredShots) {
+                const msg = `😅 咔哒... 空枪！${aiPlayer.name} 还需要再扣动 ${requiredShots - currentShot} 次扳机！`;
+                sendGameLog(msg, 'roulette');
+                updateGame(msg);
+            } else {
+                const msg = `😅 咔哒... 空枪！${aiPlayer.name} 活下来了！(已开${aiPlayer.shotsFired}枪，剩余${6 - aiPlayer.shotsFired}发)`;
+                sendGameLog(msg, 'roulette');
+                updateGame(msg);
+                setTimeout(() => {
+                    challengerId = null;
+                    startRound(true);
+                }, 2000);
+            }
+        }
+    }, 1000);
 }
 
 // --- Socket 事件 ---
@@ -204,12 +419,62 @@ io.on('connection', (socket) => {
             isAlive: true,
             isHost: isHost,
             bulletPosition: Math.floor(Math.random() * 6) + 1, // 随机1-6
-            shotsFired: 0
+            shotsFired: 0,
+            isAI: false,
+            ai: null
         });
 
-        io.emit('lobbyUpdate', players.map(p => ({name: p.name, isHost: p.isHost})));
+        io.emit('lobbyUpdate', players.map(p => ({name: p.name, isHost: p.isHost, isAI: p.isAI})));
         if(isHost) socket.emit('youAreHost');
         sendGameLog(`${playerName} 加入了游戏`, 'join');
+    });
+
+    socket.on('addAI', (difficulty) => {
+        const player = players.find(p => p.id === socket.id);
+        // 只有房主可以添加 AI
+        if (!player || !player.isHost || gameState !== 'lobby') return;
+
+        // 限制最多 7 个玩家（包括 AI）
+        if (players.length >= 7) {
+            socket.emit('err', '玩家数量已达上限（7人）');
+            return;
+        }
+
+        const validDifficulty = ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium';
+        const ai = new AIPlayer(validDifficulty);
+        const aiId = `ai_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        players.push({
+            id: aiId,
+            name: ai.name,
+            hand: [],
+            isAlive: true,
+            isHost: false,
+            bulletPosition: Math.floor(Math.random() * 6) + 1,
+            shotsFired: 0,
+            isAI: true,
+            ai: ai
+        });
+
+        io.emit('lobbyUpdate', players.map(p => ({name: p.name, isHost: p.isHost, isAI: p.isAI})));
+        sendGameLog(`${ai.name} (${validDifficulty}) 加入了游戏`, 'join');
+    });
+
+    socket.on('removeAI', () => {
+        const player = players.find(p => p.id === socket.id);
+        // 只有房主可以移除 AI
+        if (!player || !player.isHost || gameState !== 'lobby') return;
+
+        // 找到最后一个 AI 玩家并移除
+        for (let i = players.length - 1; i >= 0; i--) {
+            if (players[i].isAI) {
+                const aiName = players[i].name;
+                players.splice(i, 1);
+                io.emit('lobbyUpdate', players.map(p => ({name: p.name, isHost: p.isHost, isAI: p.isAI})));
+                sendGameLog(`${aiName} 离开了游戏`, 'leave');
+                break;
+            }
+        }
     });
 
     socket.on('startGame', () => {
